@@ -41,6 +41,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+  Object.defineProperty(window, 'devicePixelRatio', { value: 1, configurable: true })
   editor.destroy()
   container.remove()
 })
@@ -67,6 +70,71 @@ describe('setup', () => {
     expect(after.x).toBeCloseTo(before.x)
     expect(after.y).toBeCloseTo(before.y)
     expect(editor.camera.z).toBeCloseTo(2)
+  })
+
+  it('leaves the camera untouched when editor-owned camera input is disabled', () => {
+    editor.destroy()
+    editor = new Editor({ container, cameraInput: false })
+    const initial = { ...editor.camera }
+
+    container.dispatchEvent(new WheelEvent('wheel', {
+      bubbles: true,
+      cancelable: true,
+      deltaX: 40,
+      deltaY: 30,
+    }))
+    editor.setTool('hand')
+    drag(editor, [[20, 20], [120, 90]])
+    editor._keyDown({
+      key: '+', metaKey: true, ctrlKey: false, shiftKey: false,
+      preventDefault() {}, stopPropagation() {},
+    })
+
+    expect(editor.camera).toEqual(initial)
+  })
+
+  it('sets an external camera atomically and cancels queued camera work', () => {
+    vi.useFakeTimers()
+    const render = vi.spyOn(editor, 'render')
+    editor.setCamera({ x: 400, y: 200, z: 4 }, { animate: 500 })
+    editor.requestRender()
+
+    editor.setExternalCamera({ x: 80, y: -40, z: 1.5 })
+
+    expect(editor.camera).toEqual({ x: 80, y: -40, z: 1.5 })
+    expect(render).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(1_000)
+    expect(editor.camera).toEqual({ x: 80, y: -40, z: 1.5 })
+    expect(render).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders an external camera at pixel-exact pan and zoom coordinates', () => {
+    Object.defineProperty(container, 'clientWidth', { value: 320, configurable: true })
+    Object.defineProperty(container, 'clientHeight', { value: 200, configurable: true })
+    Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true })
+    const ctx = editor.canvas.getContext('2d')
+    const transform = vi.spyOn(ctx, 'setTransform')
+
+    editor.setExternalCamera({ x: 80, y: -40, z: 1.5 })
+
+    expect(editor.pageToScreen(12, 20)).toEqual({ x: 138, y: -30 })
+    expect(transform).toHaveBeenCalledWith(3, 0, 0, 3, 240, -120)
+  })
+
+  it('supports a transparent embedded drawing surface without overriding render', () => {
+    editor.destroy()
+    editor = new Editor({ container, renderBackground: false })
+    const renderScene = vi.spyOn(editor, 'renderScene')
+
+    editor.render()
+
+    expect(renderScene).toHaveBeenCalledWith(
+      expect.anything(),
+      editor.camera,
+      1,
+      1,
+      { background: false, dpr: 1, hideEditing: true },
+    )
   })
 })
 

@@ -84,6 +84,28 @@ editor.setStyle('color', 'blue')
 editor.on('selection', () => console.log([...editor.selection]))
 ```
 
+### Host-owned camera
+
+An embedding host can remain the sole camera authority while Quickdraw keeps
+owning drawing, selection, and rendering:
+
+```js
+const editor = new Editor({
+  container,
+  cameraInput: false,
+  renderBackground: false,
+})
+
+// Cancels pending Quickdraw camera/render work and paints this camera before
+// returning, so the host's other transformed content stays pixel-aligned.
+editor.setExternalCamera({ x: hostPanX / hostZoom, y: hostPanY / hostZoom, z: hostZoom })
+```
+
+`cameraInput: false` disables Quickdraw-owned wheel, pinch, hand-tool, middle-
+button, space-drag, and camera-shortcut input. Programmatic camera helpers stay
+available. `renderBackground: false` makes the drawing canvas transparent; the
+selection/interaction overlay still renders normally.
+
 ## The document
 
 The store is a flat map of immutable records. Every mutation happens in a

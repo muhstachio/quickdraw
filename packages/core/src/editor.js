@@ -32,13 +32,18 @@ const bendMidpoint = (pr) => {
 }
 
 export class Editor {
-  constructor({ container, store, theme = 'light', grid = 'lines', readonly = false, camera, styles, geoKind } = {}) {
+  constructor({
+    container, store, theme = 'light', grid = 'lines', readonly = false,
+    camera, cameraInput = true, renderBackground = true, styles, geoKind,
+  } = {}) {
     this.container = container
     this.store = store || new Store()
     this.theme = themeOf(theme)
     this.grid = GRID_IDS.includes(grid) ? grid : 'lines'
     this.readonly = !!readonly
     this.camera = camera || { x: 0, y: 0, z: 1 }
+    this.cameraInput = cameraInput !== false
+    this.renderBackground = renderBackground !== false
     this.styles = { ...DEFAULT_STYLES, ...(styles || {}) }
     this.geoKind = geoKind || 'rectangle'
     this.tool = 'draw'
@@ -135,6 +140,17 @@ export class Editor {
       if (t < 1) this._camAnim = requestAnimationFrame(step)
     }
     this._camAnim = requestAnimationFrame(step)
+  }
+  setExternalCamera(cam) {
+    this._pendingFit = null
+    this._cancelFitEase()
+    cancelAnimationFrame(this._camAnim)
+    cancelAnimationFrame(this._raf)
+    this._camAnim = 0
+    this._raf = 0
+    this.camera = { ...cam }
+    this.emit('camera')
+    this.render()
   }
   _afterCamera() {
     this.requestRender()
@@ -496,7 +512,7 @@ export class Editor {
     // second finger: the gesture becomes a pinch — a just-started stroke is
     // taken back, it was the start of a zoom, not a mark. While the pen is
     // down in pen mode, landing fingers are a resting palm, never a pinch.
-    if (!this.penMode || e.pointerType !== 'pen') {
+    if (this.cameraInput && (!this.penMode || e.pointerType !== 'pen')) {
       const pp = this._pinchPoints()
       if (pp.length === 2 && !(this.penMode && this._penDown)) {
         this._abortForPinch()
@@ -518,6 +534,7 @@ export class Editor {
 
     const p = this.screenToPage(s.x, s.y)
     if (e.button === 1 || this.spaceHeld || this.tool === 'hand') {
+      if (!this.cameraInput) return
       this.session = { type: 'panning', last: s }
       this._syncCursor('grabbing')
       return
@@ -1244,6 +1261,7 @@ export class Editor {
     const meta = e.metaKey || e.ctrlKey
     const k = e.key.toLowerCase()
     if (k === ' ') {
+      if (!this.cameraInput) return
       if (!this.spaceHeld) { this.spaceHeld = true; this._syncCursor() }
       e.preventDefault()
       return
@@ -1254,8 +1272,8 @@ export class Editor {
     if (meta && k === 'c') { e.preventDefault(); this.copySelection(); return }
     if (meta && k === 'x') { e.preventDefault(); this.copySelection().then(() => this.deleteSelection()); return }
     if (meta && k === 'v') { e.preventDefault(); this.pasteFromClipboard(); return }
-    if (meta && (k === '=' || k === '+')) { e.preventDefault(); this._zoomCenter(1.25); return }
-    if (meta && k === '-') { e.preventDefault(); this._zoomCenter(1 / 1.25); return }
+    if (this.cameraInput && meta && (k === '=' || k === '+')) { e.preventDefault(); this._zoomCenter(1.25); return }
+    if (this.cameraInput && meta && k === '-') { e.preventDefault(); this._zoomCenter(1 / 1.25); return }
     if (k === 'escape') {
       if (this.session) this._cancelSession()
       else if (this.selection.size) this.setSelection([])
@@ -1301,10 +1319,10 @@ export class Editor {
       if (toolKeys[k]) { this.setTool(toolKeys[k]); return }
       const geoKeys = { r: 'rectangle', o: 'ellipse' }
       if (geoKeys[k]) { this.setGeoKind(geoKeys[k]); this.setTool('geo'); return }
-      if (e.shiftKey && k === '!') { this.fitContent({ animate: 220 }); return }
+      if (this.cameraInput && e.shiftKey && k === '!') { this.fitContent({ animate: 220 }); return }
     }
-    if (e.shiftKey && k === '1') { this.fitContent({ animate: 220 }); return }
-    if (e.shiftKey && k === '0') {
+    if (this.cameraInput && e.shiftKey && k === '1') { this.fitContent({ animate: 220 }); return }
+    if (this.cameraInput && e.shiftKey && k === '0') {
       const { w, h } = this.viewSize()
       this.zoomAt(w / 2, h / 2, 1 / this.camera.z, { animate: 180 })
     }
@@ -1318,7 +1336,7 @@ export class Editor {
   }
 
   _wheel(e) {
-    if (this.readonly) return
+    if (this.readonly || !this.cameraInput) return
     e.preventDefault()
     const s = this._evPoint(e)
     if (e.ctrlKey || e.metaKey) {
@@ -1333,7 +1351,7 @@ export class Editor {
       ? force
       : this.readonly
         ? 'default'
-        : this.spaceHeld || this.tool === 'hand'
+        : this.cameraInput && (this.spaceHeld || this.tool === 'hand')
           ? 'grab'
           : ['draw', 'highlight', 'eraser', 'laser', 'arrow', 'line', 'geo'].includes(this.tool)
             ? 'crosshair'
@@ -1655,7 +1673,11 @@ export class Editor {
       }
     }
     const ctx = this.canvas.getContext('2d')
-    this.renderScene(ctx, this.camera, w, h, { dpr, hideEditing: true })
+    this.renderScene(ctx, this.camera, w, h, {
+      background: this.renderBackground,
+      dpr,
+      hideEditing: true,
+    })
     this._renderOverlay(w, h, dpr)
     this._renderCapture()
     if (this.editing) this._layoutTextEditor()

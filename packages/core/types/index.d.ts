@@ -188,6 +188,10 @@ export interface EditorOptions {
   grid?: GridId
   readonly?: boolean
   camera?: Camera
+  /** Allow Quickdraw's wheel, pinch, hand, and keyboard input to move the camera. */
+  cameraInput?: boolean
+  /** Paint Quickdraw's paper and grid behind the drawing. */
+  renderBackground?: boolean
   styles?: Partial<Styles>
   geoKind?: GeoId
 }
@@ -211,6 +215,8 @@ export class Editor {
   grid: GridId
   readonly: boolean
   camera: Camera
+  cameraInput: boolean
+  renderBackground: boolean
   styles: Styles
   geoKind: GeoId
   tool: ToolId
@@ -226,6 +232,11 @@ export class Editor {
   pageToScreen(px: number, py: number): { x: number; y: number }
   viewportPageBounds(): Bounds
   setCamera(cam: Camera, opts?: { animate?: number }): void
+  /**
+   * Cancel pending camera/render work, adopt a host-owned camera, and render it
+   * synchronously before returning.
+   */
+  setExternalCamera(cam: Camera): void
   pan(dxScreen: number, dyScreen: number): void
   zoomAt(sx: number, sy: number, mult: number, opts?: { animate?: number }): void
   contentBounds(): Bounds | null
